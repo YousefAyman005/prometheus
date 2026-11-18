@@ -44,3 +44,16 @@ export function backupFileName(now: number): string {
   const pad = (n: number) => String(n).padStart(2, '0')
   return `prometheus-backup-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`
 }
+
+const DAY_MS = 86_400_000
+/** A new user is not asked to back up until they have a week of data worth keeping. */
+const FIRST_NUDGE_DAYS = 7
+
+/** Whether to remind the user that their only copy of the data is on this phone. */
+export function shouldNudgeBackup(data: AppData, lastBackupAt: number | null, now: number): boolean {
+  const entries = Object.values(data.entries)
+  if (entries.length === 0) return false
+  if (lastBackupAt !== null) return now - lastBackupAt > data.settings.backupNudgeDays * DAY_MS
+  const oldest = Math.min(...entries.map((entry) => entry.updatedAt))
+  return now - oldest > FIRST_NUDGE_DAYS * DAY_MS
+}

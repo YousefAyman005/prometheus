@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { weekFigure, weekStatus } from './evaluate'
-import { describeWeek, formatClock, formatDuration, formatNumber } from './format'
+import {
+  describeRule, describeWeek, formatClock, formatCompact, formatDayLong, formatDuration, formatNumber,
+  formatTimeOfDay, formatWeekRange,
+} from './format'
 import { dataWith, entry, FRI, habit, HOUR, MON, NEXT_MON, THU, TUE, WED, WEEK } from './testing'
 import type { Entry, Habit } from './types'
 
@@ -137,5 +140,65 @@ describe('describeWeek', () => {
     const data = dataWith([h], [entry('study', MON, HOUR)])
     const v = describeWeek(h, weekFigure(h, data, WEEK, NEXT_MON), weekStatus(h, data, WEEK, NEXT_MON))
     expect(v.tone).toBe('bad')
+  })
+})
+
+describe('dates as text', () => {
+  it('writes a week inside one month with the month once', () => {
+    expect(formatWeekRange('2026-11-16')).toBe('16 – 22 November')
+  })
+
+  it('shortens the months of a week that spans two', () => {
+    expect(formatWeekRange('2026-11-30')).toBe('30 Nov – 6 Dec')
+  })
+
+  it('writes a day in full', () => {
+    expect(formatDayLong('2026-11-18')).toBe('Wednesday 18 November')
+  })
+
+  it('writes a time of day on the 24-hour clock', () => {
+    expect(formatTimeOfDay(new Date(2026, 10, 18, 7, 5).getTime())).toBe('07:05')
+  })
+})
+
+describe('formatCompact', () => {
+  const timed = { measure: 'duration' } as const
+
+  it('fits a duration into a narrow cell', () => {
+    expect(formatCompact(timed, 45 * 60)).toBe('45m')
+    expect(formatCompact(timed, 1.5 * HOUR)).toBe('1.5h')
+    expect(formatCompact(timed, 2 * HOUR)).toBe('2h')
+  })
+
+  it('shows a tick for a done yes/no day and plain numbers otherwise', () => {
+    expect(formatCompact({ measure: 'check' }, 1)).toBe('✓')
+    expect(formatCompact({ measure: 'number' }, 31)).toBe('31')
+  })
+})
+
+describe('describeRule', () => {
+  const timed = { measure: 'duration' } as const
+  const glasses = { measure: 'number', unit: 'glasses' } as const
+
+  it('describes goals on a weekly total', () => {
+    expect(describeRule(timed, { basis: 'total', target: { op: 'atLeast', min: 10 * HOUR } })).toBe('At least 10h a week')
+    expect(describeRule(timed, { basis: 'total', target: { op: 'between', min: 10 * HOUR, max: 14 * HOUR } })).toBe('10h to 14h a week')
+    expect(describeRule({ measure: 'number' }, { basis: 'total', target: { op: 'atMost', max: 2 } })).toBe('Up to 2 a week')
+    expect(describeRule({ measure: 'number', unit: 'pages' }, { basis: 'total', target: { op: 'atLeast', min: 50 } })).toBe('At least 50 pages a week')
+  })
+
+  it('describes goals on days done', () => {
+    expect(describeRule(timed, { basis: 'days', target: { op: 'atLeast', min: 3 } })).toBe('At least 3 days a week')
+    expect(describeRule({ measure: 'check' }, { basis: 'days', target: { op: 'atLeast', min: 1 } })).toBe('At least 1 day a week')
+  })
+
+  it('describes goals on a daily average', () => {
+    expect(describeRule(timed, { basis: 'dailyAverage', target: { op: 'between', min: 7 * HOUR, max: 9 * HOUR } })).toBe('7h to 9h a day on average')
+    expect(describeRule(timed, { basis: 'dailyAverage', target: { op: 'atMost', max: 3 * HOUR } })).toBe('Up to 3h a day on average')
+    expect(describeRule(glasses, { basis: 'dailyAverage', target: { op: 'atLeast', min: 8 } })).toBe('At least 8 glasses a day on average')
+  })
+
+  it('says when there is no goal', () => {
+    expect(describeRule(timed, { basis: 'total', target: null })).toBe('No goal, just tracking')
   })
 })

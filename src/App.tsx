@@ -1,87 +1,79 @@
-import { useState } from 'react'
-import { emptyData } from './domain/migrate'
-import type { AppData } from './domain/types'
-import { About } from './features/settings/About'
+import { useEffect, useState } from 'react'
+import { OverlongTimerPrompt } from './features/habit/OverlongTimerPrompt'
+import { InstallFirst } from './features/onboarding/InstallFirst'
 import { BackupRestore } from './features/settings/BackupRestore'
+import { SettingsScreen } from './features/settings/SettingsScreen'
+import { WeekScreen } from './features/week/WeekScreen'
+import { isStandalone, requestPersistentStorage } from './platform/device'
 import { appStore, useApp } from './store'
 import { Row, Section } from './ui/List'
-import { ConfirmSheet } from './ui/Sheet'
+import { useAnySheetOpen } from './ui/hooks'
+import { ToastHost } from './ui/Toast'
 
-// Stage 1, step 1: a walking skeleton whose only job is to prove on a real iPhone that
-// installing, storing, backing up and restoring work. The tracker itself replaces this screen.
+const BROWSER_OK_KEY = 'prometheus:browser-ok'
 
-function withSampleHabit(data: AppData): AppData {
-  const n = Object.keys(data.habits).length + 1
-  const id = crypto.randomUUID()
-  const day = '2026-11-18'
-  return {
-    ...data,
-    habits: {
-      ...data.habits,
-      [id]: {
-        id, name: `Sample habit ${n}`, emoji: '🔥', color: 'orange', order: n,
-        measure: 'number', input: 'counter', step: 1,
-        rules: [{ effectiveFrom: '2026-11-16', basis: 'total', target: null }],
-        membership: [{ effectiveFrom: '2026-11-16', groupId: null }],
-        createdDay: day, archivedDay: null,
-      },
-    },
-    entries: {
-      ...data.entries,
-      [`${id}:${day}`]: { id: `${id}:${day}`, habitId: id, day, value: n, source: 'counter', updatedAt: Date.now() },
-    },
+function readBrowserOk(): boolean {
+  try {
+    return sessionStorage.getItem(BROWSER_OK_KEY) === '1'
+  } catch {
+    return false
   }
 }
 
+/** Stored data exists but cannot be used. Nothing is overwritten until the user chooses. */
+function Blocked({ reason }: { reason: 'corrupt' | 'newer' }) {
+  return (
+    <main className="mx-auto max-w-lg pb-8 pt-[max(env(safe-area-inset-top),1.5rem)]">
+      <h1 className="px-4 pb-2 pt-6 text-large-title font-bold">Your data cannot be opened</h1>
+      <p className="px-4 pb-6 text-body text-label-2">
+        {reason === 'newer'
+          ? 'It was saved by a newer version of Prometheus. Close the app completely and open it again to update. Nothing has been changed.'
+          : 'What is stored on this phone is damaged. Nothing has been changed. You can restore a backup, or start again.'}
+      </p>
+      <BackupRestore />
+      <Section footer="The damaged data is kept aside on this phone in case it can be rescued.">
+        <Row label="Start again with no data" tone="destructive" onClick={() => appStore.getState().startFresh()} />
+      </Section>
+    </main>
+  )
+}
+
 export default function App() {
-  const habits = useApp((s) => s.data.habits)
   const blocked = useApp((s) => s.blocked)
-  const [confirmErase, setConfirmErase] = useState(false)
-  const names = Object.values(habits).map((h) => h.name)
+  const hasHabits = useApp((s) => Object.keys(s.data.habits).length > 0)
+  const [screen, setScreen] = useState<'week' | 'settings'>('week')
+  const [browserOk, setBrowserOk] = useState(readBrowserOk)
+  const sheetOpen = useAnySheetOpen()
+
+  // Ask the browser to protect the data once there is something worth protecting.
+  useEffect(() => {
+    if (hasHabits) void requestPersistentStorage()
+  }, [hasHabits])
+
+  if (blocked) return <Blocked reason={blocked.reason} />
+
+  if (!hasHabits && !browserOk && !isStandalone()) {
+    return (
+      <InstallFirst
+        onContinue={() => {
+          try {
+            sessionStorage.setItem(BROWSER_OK_KEY, '1')
+          } catch {
+            // Without session storage the page simply shows again next time.
+          }
+          setBrowserOk(true)
+        }}
+      />
+    )
+  }
 
   return (
-    <main className="mx-auto max-w-lg pb-[max(env(safe-area-inset-bottom),2rem)] pt-[max(env(safe-area-inset-top),1.5rem)]">
-      <h1 className="px-4 pb-1 pt-6 text-large-title font-bold">Prometheus</h1>
-      <p className="px-4 pb-6 text-subhead text-label-2">
-        Setup check. The tracker itself comes next; this screen confirms that saving and backing up work on your iPhone.
-      </p>
-
-      {blocked && (
-        <Section
-          title="Stored data cannot be opened"
-          footer={
-            blocked.reason === 'newer'
-              ? 'It was saved by a newer version of Prometheus. Close and reopen the app to update.'
-              : 'It is damaged. Restore from a backup below, or start again.'
-          }
-        >
-          <Row label="Start again with no data" tone="destructive" onClick={() => appStore.getState().startFresh()} />
-        </Section>
-      )}
-
-      <Section
-        title="Sample data"
-        footer={names.length ? names.join(', ') : 'Nothing stored yet. Add a sample habit, then try a backup.'}
-      >
-        <Row label="Add a sample habit" tone="tint" onClick={() => appStore.getState().apply(withSampleHabit)} />
-        <Row label="Erase all data" tone="destructive" onClick={() => setConfirmErase(true)} disabled={!names.length} />
-      </Section>
-
-      <BackupRestore />
-      <About />
-
-      <ConfirmSheet
-        open={confirmErase}
-        title="Erase all data?"
-        message="This removes every habit and entry from this phone. A backup file is not affected."
-        confirmLabel="Erase"
-        destructive
-        onConfirm={() => {
-          appStore.getState().apply(() => emptyData())
-          setConfirmErase(false)
-        }}
-        onCancel={() => setConfirmErase(false)}
-      />
-    </main>
+    <>
+      {screen === 'week'
+        ? <WeekScreen onOpenSettings={() => setScreen('settings')} />
+        : <SettingsScreen onBack={() => setScreen('week')} />}
+      <OverlongTimerPrompt />
+      <ToastHost active={!sheetOpen} />
+    </>
   )
 }

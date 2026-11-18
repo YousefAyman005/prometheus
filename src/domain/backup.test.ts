@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { backupFileName, buildBackup, parseBackup } from './backup'
+import { backupFileName, buildBackup, parseBackup, shouldNudgeBackup } from './backup'
 import { CURRENT_SCHEMA_VERSION, emptyData } from './migrate'
 import type { AppData } from './types'
 
@@ -64,5 +64,29 @@ describe('parseBackup', () => {
 describe('backupFileName', () => {
   it('names the file by local date so backups sort by age', () => {
     expect(backupFileName(new Date(2026, 10, 18, 22, 5).getTime())).toBe('prometheus-backup-2026-11-18.json')
+  })
+})
+
+describe('shouldNudgeBackup', () => {
+  const DAY = 86_400_000
+  const loggedAt = (ms: number) => {
+    const data = sample()
+    data.entries['h1:2026-11-18'].updatedAt = ms
+    return data
+  }
+
+  it('never nudges when nothing has been logged', () => {
+    expect(shouldNudgeBackup(emptyData(), null, NOW)).toBe(false)
+  })
+
+  it('leaves a new user alone for the first week, then nudges until a backup exists', () => {
+    expect(shouldNudgeBackup(loggedAt(NOW - 3 * DAY), null, NOW)).toBe(false)
+    expect(shouldNudgeBackup(loggedAt(NOW - 8 * DAY), null, NOW)).toBe(true)
+  })
+
+  it('nudges again once the last backup is older than the setting', () => {
+    const data = loggedAt(NOW - 60 * DAY)
+    expect(shouldNudgeBackup(data, NOW - 10 * DAY, NOW)).toBe(false)
+    expect(shouldNudgeBackup(data, NOW - 22 * DAY, NOW)).toBe(true)
   })
 })

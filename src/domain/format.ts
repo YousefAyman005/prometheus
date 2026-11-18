@@ -1,5 +1,5 @@
 import { compare, type WeekFigure, type WeekStatus } from './evaluate'
-import type { Basis, Habit } from './types'
+import type { Basis, Habit, Target } from './types'
 
 /** "7h 30m", "45m", "1h". Rounded to the minute; a real amount under a minute reads "<1m". */
 export function formatDuration(seconds: number): string {
@@ -94,4 +94,65 @@ export function describeWeek(habit: Habit, figure: WeekFigure, status: WeekStatu
 
   const extra = habit.measure === 'duration' && basis === 'days' && total > 0 ? formatDuration(total) : null
   return { text, extra, fraction, windowStart, tone }
+}
+
+// ---- Dates as text ------------------------------------------------------------------
+// Day keys are calendar dates with no time zone, so they are formatted as UTC.
+
+function utcDate(day: string): Date {
+  const [y, m, d] = day.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d))
+}
+
+const part = (options: Intl.DateTimeFormatOptions) => {
+  const format = new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' })
+  return (day: string) => format.format(utcDate(day))
+}
+
+const dayNumber = part({ day: 'numeric' })
+const monthLong = part({ month: 'long' })
+const monthShort = part({ month: 'short' })
+const weekdayLong = part({ weekday: 'long' })
+
+/** "16 – 22 November", or "30 Nov – 6 Dec" when the week spans two months. */
+export function formatWeekRange(week: string): string {
+  const sunday = new Date(utcDate(week).getTime() + 6 * 86_400_000).toISOString().slice(0, 10)
+  if (week.slice(0, 7) === sunday.slice(0, 7)) return `${dayNumber(week)} – ${dayNumber(sunday)} ${monthLong(week)}`
+  return `${dayNumber(week)} ${monthShort(week)} – ${dayNumber(sunday)} ${monthShort(sunday)}`
+}
+
+/** "Wednesday 18 November". */
+export function formatDayLong(day: string): string {
+  return `${weekdayLong(day)} ${dayNumber(day)} ${monthLong(day)}`
+}
+
+/** "07:05", in the phone's own time zone. */
+export function formatTimeOfDay(ms: number): string {
+  const d = new Date(ms)
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+}
+
+/** A day's value squeezed into a narrow cell: "45m", "1.5h", "31", or a tick. */
+export function formatCompact(habit: Pick<Habit, 'measure'>, value: number): string {
+  if (habit.measure === 'check') return value > 0 ? '✓' : ''
+  if (habit.measure === 'number') return formatNumber(value)
+  return value < 3600 ? `${Math.round(value / 60)}m` : `${formatNumber(value / 3600)}h`
+}
+
+/** A goal in a sentence: "At least 3 days a week", "7h to 9h a day on average". */
+export function describeRule(
+  habit: Pick<Habit, 'measure' | 'unit'>, rule: { basis: Basis; target: Target | null },
+): string {
+  const { basis, target } = rule
+  if (target === null) return 'No goal, just tracking'
+  const amount = (n: number) => `${formatAmount(habit, basis, n)}${unitSuffix(habit, basis, n)}`
+  const period = basis === 'dailyAverage' ? 'a day on average' : 'a week'
+  switch (target.op) {
+    case 'atLeast':
+      return `At least ${amount(target.min)} ${period}`
+    case 'atMost':
+      return `Up to ${amount(target.max)} ${period}`
+    case 'between':
+      return `${formatAmount(habit, basis, target.min)} to ${amount(target.max)} ${period}`
+  }
 }
