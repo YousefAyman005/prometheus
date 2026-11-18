@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff9f43"/>
+      <stop offset="1" stop-color="#d93a0b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#ember)"/>
+  <path fill="#fff" d="M268 92c8 66 86 104 86 204 0 70-44 122-98 122s-98-50-98-114c0-42 20-68 40-92 6 32 20 46 38 50-14-62 0-124 32-170z"/>
+  <path fill="#e8520e" d="M256 386c-28 0-48-22-48-48 0-30 24-46 38-74 16 28 58 42 58 78 0 24-20 44-48 44z"/>
+</svg>
